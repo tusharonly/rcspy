@@ -2,8 +2,10 @@ import 'package:device_packages/device_packages.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:rcspy/src/pages/remote_config_page.dart';
+import 'package:rcspy/src/pages/supabase_results_page.dart';
 import 'package:rcspy/src/providers/analysis_provider.dart';
 import 'package:rcspy/src/services/apk_analyzer.dart';
+import 'package:rcspy/src/services/supabase_service.dart';
 
 class AppTile extends StatelessWidget {
   const AppTile({super.key, required this.package});
@@ -38,8 +40,10 @@ class AppTile extends StatelessWidget {
   }
 
   void _showOptionsMenu(BuildContext context, AppAnalysisState? state) {
-    final isLoading =
-        state == null || state.isAnalyzingApk || state.isCheckingRc;
+    final isLoading = state == null ||
+        state.isAnalyzingApk ||
+        state.isCheckingRc ||
+        state.isCheckingSupabase;
 
     showModalBottomSheet(
       context: context,
@@ -70,13 +74,22 @@ class AppTile extends StatelessWidget {
                       );
                     },
             ),
-            if (state?.apkResult?.hasFirebase == true)
+            if (state?.hasFirebase == true)
               ListTile(
-                leading: const Icon(Icons.info_outline),
+                leading: const Icon(Icons.local_fire_department),
                 title: const Text('View Firebase details'),
                 onTap: () {
                   Navigator.pop(context);
-                  _showFirebaseDetails(context, state!.apkResult!);
+                  _showFirebaseDetails(context, state!.apkResult!.firebase);
+                },
+              ),
+            if (state?.hasSupabase == true)
+              ListTile(
+                leading: const Icon(Icons.storage),
+                title: const Text('View Supabase details'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showSupabaseDetails(context, state!.apkResult!.supabase);
                 },
               ),
             if (state?.rcResult?.isAccessible == true)
@@ -96,6 +109,23 @@ class AppTile extends StatelessWidget {
                   );
                 },
               ),
+            if (state?.supabaseResult?.isVulnerable == true)
+              ListTile(
+                leading: const Icon(Icons.security),
+                title: const Text('View Supabase vulnerabilities'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SupabaseResultsPage(
+                        appName: package.name ?? 'Unknown App',
+                        result: state!.supabaseResult!,
+                      ),
+                    ),
+                  );
+                },
+              ),
             const SizedBox(height: 8),
           ],
         ),
@@ -105,7 +135,7 @@ class AppTile extends StatelessWidget {
 
   void _handleTap(BuildContext context, AppAnalysisState? state) {
     final rcResult = state?.rcResult;
-    final apkResult = state?.apkResult;
+    final supabaseResult = state?.supabaseResult;
 
     if (rcResult?.isAccessible == true) {
       Navigator.push(
@@ -117,8 +147,20 @@ class AppTile extends StatelessWidget {
           ),
         ),
       );
-    } else if (apkResult?.hasFirebase == true) {
-      _showFirebaseDetails(context, apkResult!);
+    } else if (supabaseResult?.isVulnerable == true) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SupabaseResultsPage(
+            appName: package.name ?? 'Unknown App',
+            result: supabaseResult!,
+          ),
+        ),
+      );
+    } else if (state?.hasFirebase == true) {
+      _showFirebaseDetails(context, state!.apkResult!.firebase);
+    } else if (state?.hasSupabase == true) {
+      _showSupabaseDetails(context, state!.apkResult!.supabase);
     }
   }
 
@@ -139,6 +181,15 @@ class AppTile extends StatelessWidget {
             isLoading: true,
           ),
         );
+      } else if (state?.isCheckingSupabase == true) {
+        chips.add(
+          _buildChip(
+            'Checking Supabase',
+            Colors.teal,
+            Icons.storage,
+            isLoading: true,
+          ),
+        );
       } else {
         chips.add(_buildChip('Waiting', Colors.grey, Icons.hourglass_empty));
       }
@@ -147,13 +198,15 @@ class AppTile extends StatelessWidget {
 
     final apkResult = state.apkResult!;
     final rcResult = state.rcResult;
+    final supabaseResult = state.supabaseResult;
 
     if (apkResult.error != null) {
       chips.add(_buildChip('Error', Colors.red, Icons.error_outline));
       return Wrap(spacing: 6, runSpacing: 4, children: chips);
     }
 
-    if (apkResult.hasFirebase) {
+    // Firebase status
+    if (apkResult.firebase.hasFirebase) {
       chips.add(
         _buildChip('Firebase', Colors.orange, Icons.local_fire_department),
       );
@@ -173,8 +226,8 @@ class AppTile extends StatelessWidget {
           chips.add(_buildChip('RC Secure', Colors.green, Icons.lock));
         }
       } else {
-        final hasAppId = apkResult.googleAppIds.isNotEmpty;
-        final hasApiKey = apkResult.googleApiKeys.isNotEmpty;
+        final hasAppId = apkResult.firebase.googleAppIds.isNotEmpty;
+        final hasApiKey = apkResult.firebase.googleApiKeys.isNotEmpty;
         if (!hasAppId || !hasApiKey) {
           chips.add(
             _buildChip(
@@ -185,9 +238,37 @@ class AppTile extends StatelessWidget {
           );
         }
       }
-    } else {
+    }
+
+    // Supabase status
+    if (apkResult.supabase.hasSupabase) {
       chips.add(
-        _buildChip('No Firebase', Colors.grey, Icons.check_circle_outline),
+        _buildChip('Supabase', Colors.teal, Icons.storage),
+      );
+
+      if (supabaseResult != null) {
+        if (supabaseResult.isVulnerable) {
+          final buckets = supabaseResult.publicBuckets.length;
+          final tables = supabaseResult.exposedTables.length;
+          final total = buckets + tables;
+          chips.add(
+            _buildChip(
+              'Exposed ($total)',
+              Colors.red,
+              Icons.warning_amber,
+              isBold: true,
+            ),
+          );
+        } else {
+          chips.add(_buildChip('SB Secure', Colors.green, Icons.lock));
+        }
+      }
+    }
+
+    // No backend detected
+    if (!apkResult.firebase.hasFirebase && !apkResult.supabase.hasSupabase) {
+      chips.add(
+        _buildChip('No Backend', Colors.grey, Icons.check_circle_outline),
       );
     }
 
@@ -238,8 +319,8 @@ class AppTile extends StatelessWidget {
   }
 
   Widget _buildTrailingWidget(BuildContext context, AppAnalysisState? state) {
-    final apkResult = state?.apkResult;
     final rcResult = state?.rcResult;
+    final supabaseResult = state?.supabaseResult;
 
     return PopupMenuButton<String>(
       icon: Icon(Icons.more_vert, color: Colors.grey[600]),
@@ -249,12 +330,17 @@ class AppTile extends StatelessWidget {
           case 'reanalyze':
             context.read<AnalysisProvider>().reanalyzePackage(package);
             break;
-          case 'details':
-            if (apkResult?.hasFirebase == true) {
-              _showFirebaseDetails(context, apkResult!);
+          case 'firebase_details':
+            if (state?.hasFirebase == true) {
+              _showFirebaseDetails(context, state!.apkResult!.firebase);
             }
             break;
-          case 'config':
+          case 'supabase_details':
+            if (state?.hasSupabase == true) {
+              _showSupabaseDetails(context, state!.apkResult!.supabase);
+            }
+            break;
+          case 'rc_config':
             if (rcResult?.isAccessible == true) {
               Navigator.push(
                 context,
@@ -262,6 +348,19 @@ class AppTile extends StatelessWidget {
                   builder: (context) => RemoteConfigPage(
                     appName: package.name ?? 'Unknown App',
                     configValues: rcResult?.configValues ?? {},
+                  ),
+                ),
+              );
+            }
+            break;
+          case 'supabase_vuln':
+            if (supabaseResult?.isVulnerable == true) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => SupabaseResultsPage(
+                    appName: package.name ?? 'Unknown App',
+                    result: supabaseResult!,
                   ),
                 ),
               );
@@ -280,25 +379,47 @@ class AppTile extends StatelessWidget {
             ],
           ),
         ),
-        if (apkResult?.hasFirebase == true)
+        if (state?.hasFirebase == true)
           const PopupMenuItem(
-            value: 'details',
+            value: 'firebase_details',
             child: Row(
               children: [
-                Icon(Icons.info_outline, size: 20),
+                Icon(Icons.local_fire_department, size: 20),
                 SizedBox(width: 8),
                 Text('Firebase details'),
               ],
             ),
           ),
+        if (state?.hasSupabase == true)
+          const PopupMenuItem(
+            value: 'supabase_details',
+            child: Row(
+              children: [
+                Icon(Icons.storage, size: 20),
+                SizedBox(width: 8),
+                Text('Supabase details'),
+              ],
+            ),
+          ),
         if (rcResult?.isAccessible == true)
           const PopupMenuItem(
-            value: 'config',
+            value: 'rc_config',
             child: Row(
               children: [
                 Icon(Icons.vpn_key, size: 20),
                 SizedBox(width: 8),
                 Text('View RC config'),
+              ],
+            ),
+          ),
+        if (supabaseResult?.isVulnerable == true)
+          const PopupMenuItem(
+            value: 'supabase_vuln',
+            child: Row(
+              children: [
+                Icon(Icons.security, size: 20),
+                SizedBox(width: 8),
+                Text('Supabase vulnerabilities'),
               ],
             ),
           ),
@@ -393,6 +514,107 @@ class AppTile extends StatelessWidget {
                         fontFamily: 'monospace',
                         fontSize: 13,
                         color: Colors.blue,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSupabaseDetails(
+    BuildContext context,
+    SupabaseAnalysisResult supabaseResult,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) => SingleChildScrollView(
+          controller: scrollController,
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                package.name ?? 'Unknown App',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+
+              if (supabaseResult.projectUrls.isNotEmpty) ...[
+                const Text(
+                  '🌐 Supabase Project URLs:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                ...supabaseResult.projectUrls.map(
+                  (url) => Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.teal.withOpacity(0.3)),
+                    ),
+                    child: SelectableText(
+                      url,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                        color: Colors.teal,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              if (supabaseResult.anonKeys.isNotEmpty) ...[
+                const Text(
+                  '🔑 Supabase Keys:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                ...supabaseResult.anonKeys.map(
+                  (key) => Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                    ),
+                    child: SelectableText(
+                      key,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: Colors.purple,
                       ),
                     ),
                   ),

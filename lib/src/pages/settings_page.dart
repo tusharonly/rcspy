@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:rcspy/src/services/settings_service.dart';
 import 'package:rcspy/src/services/storage_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,17 +14,20 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   static const String _githubUrl = 'https://github.com/tusharonly/rcspy';
   String _version = '';
+  bool _hideEmptyRc = true;
 
   @override
   void initState() {
     super.initState();
-    _loadVersion();
+    _loadSettings();
   }
 
-  Future<void> _loadVersion() async {
+  Future<void> _loadSettings() async {
+    await SettingsService.init();
     final packageInfo = await PackageInfo.fromPlatform();
     setState(() {
       _version = 'v${packageInfo.version} (${packageInfo.buildNumber})';
+      _hideEmptyRc = SettingsService.hideEmptyRemoteConfig;
     });
   }
 
@@ -37,6 +41,45 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         children: [
           const SizedBox(height: 8),
+
+          _SectionHeader(title: 'Analysis Settings'),
+          SwitchListTile(
+            secondary: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.filter_alt, color: Colors.orange, size: 20),
+            ),
+            title: const Text(
+              'Hide Empty Remote Config',
+              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15),
+            ),
+            subtitle: Text(
+              'Don\'t count apps with accessible but empty Remote Config as vulnerable',
+              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            ),
+            value: _hideEmptyRc,
+            onChanged: (value) async {
+              await SettingsService.setHideEmptyRemoteConfig(value);
+              setState(() => _hideEmptyRc = value);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      value
+                          ? 'Empty Remote Config will be hidden from Vulnerable filter'
+                          : 'All accessible Remote Config will be shown as Vulnerable',
+                    ),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+          ),
+
+          const Divider(height: 32),
 
           _SectionHeader(title: 'Links'),
           _SettingsTile(
@@ -69,6 +112,37 @@ class _SettingsPageState extends State<SettingsPage> {
             title: 'Clear Cache',
             subtitle: 'Remove all saved analysis results',
             onTap: () => _showClearCacheDialog(context),
+          ),
+
+          const Divider(height: 32),
+
+          _SectionHeader(title: 'How It Works'),
+          _InfoTile(
+            icon: Icons.help_outline,
+            title: 'What does this app do?',
+            content: '''
+RC Spy scans installed Android apps to find security misconfigurations in Firebase and Supabase backends.
+
+**Firebase Remote Config**
+- Extracts Google App IDs and API Keys from APK files
+- Tests if Remote Config endpoints are publicly accessible
+- Shows exposed configuration values that could leak secrets
+
+**Supabase**
+- Finds Supabase project URLs and anon keys in APKs
+- Checks for publicly accessible storage buckets
+- Tests common database tables for exposed data
+
+**Why does this matter?**
+Misconfigured backends can expose:
+- API keys and secrets
+- Feature flags
+- Server URLs
+- User data (in Supabase tables)
+- Files (in public storage buckets)
+
+Security researchers can use this to identify vulnerable apps and responsibly disclose issues to developers.
+''',
           ),
 
           const SizedBox(height: 32),
@@ -205,6 +279,61 @@ class _SettingsTile extends StatelessWidget {
       ),
       trailing: trailing,
       onTap: onTap,
+    );
+  }
+}
+
+class _InfoTile extends StatelessWidget {
+  const _InfoTile({
+    required this.icon,
+    required this.title,
+    required this.content,
+  });
+
+  final IconData icon;
+  final String title;
+  final String content;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.purple.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: Colors.purple, size: 20),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontWeight: FontWeight.w500,
+          fontSize: 15,
+        ),
+      ),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Text(
+              content.trim(),
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[700],
+                height: 1.5,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,4 +1,4 @@
-# RC Spy - Firebase Remote Config Scanner
+# RC Spy - Firebase & Supabase Security Scanner
 
 <p>
   <a href="https://github.com/tusharonly/rcspy/releases/latest">
@@ -11,7 +11,7 @@
   <img alt="stars" src="https://img.shields.io/github/stars/tusharonly/rcspy" />
 </p>
 
-RC Spy is a security tool that scans installed Android apps to detect if their Firebase Remote Config is publicly accessible — a common misconfiguration that can expose sensitive configuration data. It extracts Firebase credentials from APKs and checks for vulnerable endpoints. Built using the [Flutter](https://flutter.dev/) framework.
+RC Spy is a security tool that scans installed Android apps to detect backend misconfigurations. It identifies exposed Firebase Remote Config endpoints and Supabase instances with insecure storage buckets or tables. The tool extracts credentials from APKs (including Flutter apps) and tests for vulnerable endpoints. Built using the [Flutter](https://flutter.dev/) framework.
 
 <p align="center">
 <a href="https://github.com/tusharonly/rcspy/releases/latest" target="_blank">
@@ -20,12 +20,27 @@ RC Spy is a security tool that scans installed Android apps to detect if their F
 
 ## Features
 
+### Firebase Detection
 - **APK Analysis** — Extracts Firebase credentials (App IDs & API Keys) from installed apps
 - **Vulnerability Detection** — Checks if Remote Config endpoints are publicly accessible
 - **Multiple Views** — View exposed configs in List, Table, or raw JSON format
-- **Smart Filtering** — Filter by All, Vulnerable, Firebase, Secure, or No Firebase
+
+### Supabase Detection
+- **Credential Extraction** — Finds Supabase project URLs and API keys
+- **Smart JWT Validation** — Validates JWT tokens to ensure they're actually Supabase keys (not Auth0, Firebase Auth, etc.)
+- **Key Format Support** — Detects both old JWT format (`eyJ...`) and new format (`sb_publishable_...`)
+- **Security Analysis** — Tests for exposed storage buckets and database tables
+- **Schema Discovery** — Automatically discovers tables via PostgREST OpenAPI schema
+- **Multiple Views** — View exposed data in List, Table, or raw JSON format (unified with Firebase UI)
+
+### General
+- **Flutter App Support** — Scans native libraries (`.so` files) where Flutter stores compiled strings
+- **Smart Filtering** — Filter by All, Vulnerable, Firebase, Supabase, Secure, or No Backend
+- **Search** — Quick search to find apps by name
+- **Manual Scan Mode** — Start scanning when you're ready with the "Start Scan" button
 - **Local Caching** — Results persist across app launches
 - **Fast Scanning** — Parallel analysis using isolates for smooth performance
+- **Share Results** — Export and share analysis findings
 
 ## How it looks
 
@@ -58,6 +73,7 @@ RC Spy is a security tool that scans installed Android apps to detect if their F
 - Security researchers auditing app configurations
 - Penetration testers identifying misconfigurations
 - Developers checking their own apps for vulnerabilities
+- Bug bounty hunters looking for exposed backends
 
 ## Built With
 

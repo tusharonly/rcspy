@@ -2,15 +2,24 @@ import 'dart:convert';
 
 import 'package:rcspy/src/services/apk_analyzer.dart';
 import 'package:rcspy/src/services/remote_config_service.dart';
+import 'package:rcspy/src/services/supabase_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class CachedAppData {
   final String packageId;
+  // Firebase data
   final bool hasFirebase;
   final List<String> googleAppIds;
   final List<String> googleApiKeys;
   final bool? rcAccessible;
   final Map<String, dynamic>? rcConfigValues;
+  // Supabase data
+  final bool hasSupabase;
+  final List<String> supabaseUrls;
+  final List<String> supabaseAnonKeys;
+  final bool? supabaseVulnerable;
+  final Map<String, dynamic>? supabaseSecurityData;
+  // Common
   final String? error;
   final DateTime analyzedAt;
 
@@ -21,9 +30,18 @@ class CachedAppData {
     this.googleApiKeys = const [],
     this.rcAccessible,
     this.rcConfigValues,
+    this.hasSupabase = false,
+    this.supabaseUrls = const [],
+    this.supabaseAnonKeys = const [],
+    this.supabaseVulnerable,
+    this.supabaseSecurityData,
     this.error,
     required this.analyzedAt,
   });
+
+  bool get hasAnyBackend => hasFirebase || hasSupabase;
+  bool get hasAnyVulnerability =>
+      rcAccessible == true || supabaseVulnerable == true;
 
   Map<String, dynamic> toJson() => {
         'packageId': packageId,
@@ -32,6 +50,11 @@ class CachedAppData {
         'googleApiKeys': googleApiKeys,
         'rcAccessible': rcAccessible,
         'rcConfigValues': rcConfigValues,
+        'hasSupabase': hasSupabase,
+        'supabaseUrls': supabaseUrls,
+        'supabaseAnonKeys': supabaseAnonKeys,
+        'supabaseVulnerable': supabaseVulnerable,
+        'supabaseSecurityData': supabaseSecurityData,
         'error': error,
         'analyzedAt': analyzedAt.toIso8601String(),
       };
@@ -46,12 +69,19 @@ class CachedAppData {
       rcConfigValues: json['rcConfigValues'] != null
           ? Map<String, dynamic>.from(json['rcConfigValues'])
           : null,
+      hasSupabase: json['hasSupabase'] as bool? ?? false,
+      supabaseUrls: List<String>.from(json['supabaseUrls'] ?? []),
+      supabaseAnonKeys: List<String>.from(json['supabaseAnonKeys'] ?? []),
+      supabaseVulnerable: json['supabaseVulnerable'] as bool?,
+      supabaseSecurityData: json['supabaseSecurityData'] != null
+          ? Map<String, dynamic>.from(json['supabaseSecurityData'])
+          : null,
       error: json['error'] as String?,
       analyzedAt: DateTime.parse(json['analyzedAt'] as String),
     );
   }
 
-  FirebaseAnalysisResult toApkResult() {
+  FirebaseAnalysisResult toFirebaseResult() {
     if (error != null) {
       return FirebaseAnalysisResult.error(error!);
     }
@@ -62,12 +92,41 @@ class CachedAppData {
     );
   }
 
+  SupabaseAnalysisResult toSupabaseAnalysisResult() {
+    if (error != null) {
+      return SupabaseAnalysisResult.error(error!);
+    }
+    return SupabaseAnalysisResult(
+      hasSupabase: hasSupabase,
+      projectUrls: supabaseUrls,
+      anonKeys: supabaseAnonKeys,
+    );
+  }
+
+  ApkAnalysisResult toApkResult() {
+    if (error != null) {
+      return ApkAnalysisResult.error(error!);
+    }
+    return ApkAnalysisResult(
+      firebase: toFirebaseResult(),
+      supabase: toSupabaseAnalysisResult(),
+    );
+  }
+
   RemoteConfigResult? toRcResult() {
     if (rcAccessible == null) return null;
     if (rcAccessible!) {
       return RemoteConfigResult.accessible(rcConfigValues ?? {});
     }
     return RemoteConfigResult.secure();
+  }
+
+  SupabaseSecurityResult? toSupabaseSecurityResult() {
+    if (supabaseVulnerable == null) return null;
+    if (supabaseVulnerable!) {
+      return SupabaseSecurityResult.fromMap(supabaseSecurityData ?? {});
+    }
+    return SupabaseSecurityResult.secure();
   }
 }
 
